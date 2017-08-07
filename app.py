@@ -51,7 +51,7 @@ def main(argv):
 
         imzml = aws_download_file(os.path.join(folder, filename), 'utf-8')
         if imzml is not None:
-            save_file(imzml, os.path.join(output_dir, folder), filename)
+            save_file(imzml, output_dir, filename)
 
         ibd_file = get_ibd_filename(submission).replace(aws_bucket, '')
         path = ibd_file.split('/')
@@ -61,7 +61,7 @@ def main(argv):
 
         ibd = aws_download_file(os.path.join(folder, filename))
         if ibd is not None:
-            save_file(ibd, os.path.join(output_dir, folder), filename, data_type='binary')
+            save_file(ibd, output_dir, filename, data_type='binary')
 
 
 def read_josn_file(file_name):
