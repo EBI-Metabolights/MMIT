@@ -14,10 +14,11 @@ logger = logging.getLogger(__name__)
 
 
 def main(argv):
-    options = 'htdi:o:'
+    options = 'hvtdi:o:'
     options_help = """ [-h, -t, -i <inputfile.json>] -o <outputdir>]
                    
                    -h   --help          Display this message.
+                   -v   --version       Display version information.
                    -i   --inputfile     Provide the JSON input file.
                    -o   --outputdir     Set the output folder. Will be created if not found.
                    -d   --download      Download METASPACE study associated files. 
@@ -30,15 +31,23 @@ def main(argv):
     download_mode = False
 
     try:
-        opts, args = getopt.getopt(argv, options, ['help', 'test', 'download', 'inputfile=', 'outputdir='])
+        opts, args = getopt.getopt(argv, options, ['help', 'version', 'test', 'download', 'inputfile=', 'outputdir='])
     except getopt.GetoptError:
         print('Use: python ' + os.path.basename(sys.argv[0]) + options_help)
         sys.exit(2)
+    if len(opts) < 1:
+        print(config.APP_NAME, config.APP_VERSION)
+        print('Use: python ' + os.path.basename(sys.argv[0]) + options_help)
+        exit()
     for opt, arg in opts:
         if opt in ('-h', '--help'):
-            print('Read METASPACE JSON export file')
+            print(config.APP_NAME, config.APP_VERSION)
+            print(config.APP_DESCRIPTION)
             print('Use: python ' + os.path.basename(sys.argv[0]) + options_help)
             sys.exit()
+        if opt in ('-v', '--version'):
+            print(config.APP_NAME, config.APP_VERSION)
+            exit()
         if opt in ('-i', '--inputfile'):
             input_file = arg
         if opt in ('-o', '--outputdir'):
