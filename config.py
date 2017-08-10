@@ -1,5 +1,4 @@
 # General app settings
-
 APP_NAME = "MMIT"
 APP_DESCRIPTION = "METASPACE-MetaboLights Interface Tools"
 APP_VERSION = "0.1.0"
