@@ -1,1 +1,4 @@
 boto3
+isatools
+pillow
+requests
