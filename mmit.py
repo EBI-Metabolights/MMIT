@@ -1,12 +1,15 @@
 import sys
+import boto3
+import requests
 import config
 import configparser
 import logging
 import getopt
 import os
 import json
-from aws_client import aws_download_file
+from aws_client import aws_download_file, AwsCredentials
 from isa_api_client import IsaApiClient
+from sm_annotation_utils.sm_annotation_utils import SMInstance
 
 msg_format = '%(asctime)s %(levelname)s %(message)s'
 date_format= '%Y-%d-%m %H:%M:%S'
@@ -18,7 +21,7 @@ def main(argv):
     short_options = 'hvti:o:a:tn'
     long_options = ['help', 'version', 'testmode',
                     'inputfile=', 'outputdir=',
-                    'imzML', 'ibd', 'annotations',
+                    'imzML', 'ibd', 'annotations', 'images',
                     'new-study', 'title=', 'description='
                     ]
     options_help = """ [options]
@@ -32,6 +35,7 @@ General Options:
         --imzml         Download *.imzml study associated files.
         --ibd           Download *.ibd study associated files.
         --annotations   Download JSON study file.
+        --images        Download raw optical images.
    -n   --new-study     Create ISA-Tab new Study with provided title.
         --title         Study title.
         --description   Study description.
@@ -43,6 +47,7 @@ General Options:
     download_imzml = False
     download_ibd = False
     download_annotations = False
+    download_images = False
     create_new_study = False
     std_title = ''
     std_description = ''
@@ -77,6 +82,8 @@ General Options:
             download_ibd = True
         if opt == '--annotations':
             download_annotations = True
+        if opt == '--images':
+            download_images = True
         if opt in ('-n', '--new-study'):
             create_new_study = True
         if opt == '--title':
@@ -96,6 +103,8 @@ General Options:
         aws_download_files(mtspc_obj, output_dir, 'ibd', data_type='binary')
     if download_annotations:
         aws_get_annotations(mtspc_obj, output_dir)
+    if download_images:
+        aws_get_images(mtspc_obj, output_dir)
     if create_new_study:
         iac = IsaApiClient()
         inv = iac.new_study(std_title, std_description, mtspc_obj, output_dir, persist=True)
@@ -122,28 +131,8 @@ def aws_download_files(mtspc_obj, output_dir, extension, data_type='binary'):
         filename = path[1]
         logger.info("Getting file %s", a_file)
         file = aws_download_file(os.path.join(folder, filename), data_type)
-        if file is not None:
+        if file:
             save_file(file, output_dir, filename, data_type)
-
-        # imzml_file = get_imzml_filename(sample).replace(aws_bucket, '')
-        # path = imzml_file.split('/')
-        # folder = path[0]
-        # filename = path[1]
-        # logger.info("Getting file %s", imzml_file)
-        #
-        # imzml = aws_download_file(os.path.join(folder, filename), 'utf-8')
-        # if imzml is not None:
-        #     save_file(imzml, output_dir, filename)
-
-        # ibd_file = get_ibd_filename(sample).replace(aws_bucket, '')
-        # path = ibd_file.split('/')
-        # folder = path[0]
-        # filename = path[1]
-        # logger.info("Getting file %s", ibd_file)
-        #
-        # ibd = aws_download_file(os.path.join(folder, filename))
-        # if ibd is not None:
-        #     save_file(ibd, output_dir, filename, data_type='binary')
 
 
 def parse(filename):
@@ -159,22 +148,6 @@ def get_filename(sample_data, extension):
     filename = metaspace_options['Dataset_Name'] + '.' + extension
     path = os.path.join(s3dir[extension].strip(filename), filename)
     return path
-
-
-# def get_imzml_filename(sample_data):
-#     metaspace_options = sample_data['metaspace_options']
-#     s3dir = sample_data['s3dir']
-#     filename = metaspace_options['Dataset_Name'] + '.imzML'
-#     path = os.path.join(s3dir['imzML'].strip(filename), filename)
-#     return path
-
-
-# def get_ibd_filename(submission):
-#     metaspace_options = submission['metaspace_options']
-#     s3dir = submission['s3dir']
-#     filename = metaspace_options['Dataset_Name'] + '.ibd'
-#     path = os.path.join(s3dir['ibd'].strip(filename), filename)
-#     return path
 
 
 def save_file(content, path, filename, data_type='text'):
@@ -242,6 +215,41 @@ def aws_get_annotations(mtspc_obj, output_dir, database="HMDB", fdr=0.1):
                      fdr, rho_spatial, rho_spectral, rho_chaos, molecule_names]
             print(*items, sep='\t')
             return
+
+
+aws_cred = AwsCredentials()
+
+
+def aws_get_images(mtspc_obj, output_dir):
+
+    session = boto3.Session(aws_cred.get_access_key, aws_cred.get_secret_access_key)
+    s3 = session.resource('s3')
+    sm = SMInstance()
+
+    for sample in mtspc_obj:
+        metaspace_options = sample['metaspace_options']
+        ds_name = metaspace_options['Dataset_Name']
+        ds = sm.dataset(name=ds_name)
+        opt_im = ds._gqclient.getRawOpticalImage(ds.id)['rawOpticalImage']
+        img_url = ds._baseurl + opt_im['url']
+        img_folder = opt_im['url'].split('/')[1]
+        img_name = opt_im['url'].split('/')[2]
+
+        logger.info("Getting file %s", img_url)
+        img_data = requests.get(img_url).content
+        if img_data:
+            save_file(content=img_data,
+                      path=os.path.join(output_dir, img_folder),
+                      filename=img_name + '.jpg', data_type='binary')
+
+
+def get_aws_session(database):
+    # CONNECT TO METASPACE SERVICES
+    from sm_annotation_utils import sm_annotation_utils
+    sm = sm_annotation_utils.SMInstance()  # connect to the main metaspace service
+    db = sm._moldb_client.getDatabase(database)  # connect to the molecular database service
+
+    return sm
 
 
 if __name__ == "__main__":

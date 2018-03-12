@@ -42,17 +42,14 @@ class AwsCredentials(object):
 
 
 aws_cred = AwsCredentials()
+session = boto3.Session(aws_cred.get_access_key, aws_cred.get_secret_access_key)
+s3 = session.resource('s3')
+bucket = s3.Bucket(aws_cred.get_bucket)
 
 
 def aws_download_file(source, data_type='binary'):
 
-    session = boto3.Session(aws_cred.get_access_key, aws_cred.get_secret_access_key)
-
-    s3 = session.resource('s3')
-    b = s3.Bucket(aws_cred.get_bucket)
-    list(b.objects.limit(10))
-
-    obj = b.Object(source)
+    obj = bucket.Object(source)
     logger.info("Downloading %s", source)
     body = None
     try:
