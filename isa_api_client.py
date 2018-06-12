@@ -10,6 +10,8 @@ import json
 from isatools.model import *
 from isatools.isajson import ISAJSONEncoder
 
+import config
+
 logger = logging.getLogger(__name__)
 
 
@@ -86,8 +88,8 @@ class IsaApiClient:
         investigation.studies.append(study)
 
         # CONNECT TO METASPACE SERVICES
-        database = "HMDB"
-        fdr = 0.1
+        database = config.DATABASE
+        fdr = config.FDR
         from sm_annotation_utils import sm_annotation_utils
         sm = sm_annotation_utils.SMInstance()  # connect to the main metaspace service
         db = sm._moldb_client.getDatabase(database)  # connect to the molecular database service

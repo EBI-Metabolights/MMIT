@@ -32,7 +32,7 @@ General Options:
    -t   --testmode      Read the input JSON file provided with option -i and print its content.
    -i   --inputfile     Provide the JSON input file.
    -o   --outputdir     Set the output folder. Will be created if not found. 
-        --imzml         Download *.imzml study associated files.
+        --imzML         Download *.imzml study associated files.
         --ibd           Download *.ibd study associated files.
         --annotations   Download JSON study file.
         --images        Download raw optical images.
@@ -161,7 +161,7 @@ def save_file(content, path, filename, data_type='text'):
         data_file.close()
 
 
-def aws_get_annotations(mtspc_obj, output_dir, database="HMDB", fdr=0.1):
+def aws_get_annotations(mtspc_obj, output_dir, database=config.DATABASE, fdr=config.FDR):
     # CONNECT TO METASPACE SERVICES
     from sm_annotation_utils import sm_annotation_utils
     sm = sm_annotation_utils.SMInstance()  # connect to the main metaspace service
