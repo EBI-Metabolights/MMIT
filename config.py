@@ -9,3 +9,6 @@ APP_VERSION = "0.1.0"
 
 # AWS Cloud
 AWS_CREDENTIALS = 'aws_credentials.cfg'
+
+DATABASE = "HMDB-v4"
+FDR = 0.1

@@ -161,7 +161,7 @@ def save_file(content, path, filename, data_type='text'):
         data_file.close()
 
 
-def aws_get_annotations(mtspc_obj, output_dir, database="HMDB", fdr=0.1):
+def aws_get_annotations(mtspc_obj, output_dir, database=config.DATABASE, fdr=config.FDR):
     # CONNECT TO METASPACE SERVICES
     from sm_annotation_utils import sm_annotation_utils
     sm = sm_annotation_utils.SMInstance()  # connect to the main metaspace service
