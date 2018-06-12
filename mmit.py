@@ -32,7 +32,7 @@ General Options:
    -t   --testmode      Read the input JSON file provided with option -i and print its content.
    -i   --inputfile     Provide the JSON input file.
    -o   --outputdir     Set the output folder. Will be created if not found. 
-        --imzml         Download *.imzml study associated files.
+        --imzML         Download *.imzml study associated files.
         --ibd           Download *.ibd study associated files.
         --annotations   Download JSON study file.
         --images        Download raw optical images.
