@@ -10,6 +10,8 @@ import json
 from aws_client import aws_download_file, AwsCredentials
 from isa_api_client import IsaApiClient
 from sm_annotation_utils.sm_annotation_utils import SMInstance
+import csv
+from collections import OrderedDict
 
 msg_format = '%(asctime)s %(levelname)s %(message)s'
 date_format= '%Y-%d-%m %H:%M:%S'
@@ -18,9 +20,10 @@ logger = logging.getLogger(__name__)
 
 
 def main(argv):
-    short_options = 'hvti:o:a:tn'
+    short_options = 'hvti:o:pa:tn'
     long_options = ['help', 'version', 'testmode',
                     'inputfile=', 'outputdir=',
+                    'use-path',
                     'imzML', 'ibd', 'annotations', 'images',
                     'new-study', 'title=', 'description='
                     ]
@@ -31,7 +34,8 @@ General Options:
    -v   --version       Display version information.
    -t   --testmode      Read the input JSON file provided with option -i and print its content.
    -i   --inputfile     Provide the JSON input file.
-   -o   --outputdir     Set the output folder. Will be created if not found. 
+   -o   --outputdir     Set the output folder. Will be created if not found.
+   -p   --use-path      Save files keeping same folder structure as in AWS  
         --imzML         Download *.imzml study associated files.
         --ibd           Download *.ibd study associated files.
         --annotations   Download JSON study file.
@@ -51,6 +55,7 @@ General Options:
     create_new_study = False
     std_title = ''
     std_description = ''
+    use_path = False
 
     try:
         opts, args = getopt.getopt(argv, shortopts=short_options, longopts=long_options)
@@ -90,6 +95,8 @@ General Options:
             std_title = arg
         if opt == '--description':
             std_description = arg
+        if opt in ('-p', '--use-path'):
+            use_path = True
 
     mtspc_obj = parse(input_file)
 
@@ -98,13 +105,13 @@ General Options:
         exit(0)
 
     if download_imzml:
-        aws_download_files(mtspc_obj, output_dir, 'imzML', data_type='utf-8')
+        aws_download_files(mtspc_obj, output_dir, 'imzML', data_type='utf-8', use_path=use_path)
     if download_ibd:
-        aws_download_files(mtspc_obj, output_dir, 'ibd', data_type='binary')
+        aws_download_files(mtspc_obj, output_dir, 'ibd', data_type='binary', use_path=use_path)
     if download_annotations:
         aws_get_annotations(mtspc_obj, output_dir)
     if download_images:
-        aws_get_images(mtspc_obj, output_dir)
+        aws_get_images(mtspc_obj, output_dir, use_path=use_path)
     if create_new_study:
         iac = IsaApiClient()
         inv = iac.new_study(std_title, std_description, mtspc_obj, output_dir, persist=True)
@@ -118,7 +125,7 @@ def print_mtspc_obj(mtspc_obj):
         print()
 
 
-def aws_download_files(mtspc_obj, output_dir, extension, data_type='binary'):
+def aws_download_files(mtspc_obj, output_dir, extension, data_type='binary', use_path=False):
     credentials = configparser.ConfigParser()
     credentials.read(config.AWS_CREDENTIALS)
     mtspc = credentials['METASPACE']
@@ -126,13 +133,13 @@ def aws_download_files(mtspc_obj, output_dir, extension, data_type='binary'):
 
     for sample in mtspc_obj:
         a_file = get_filename(sample, extension).replace(aws_bucket, '')
-        path = a_file.split('/')
-        folder = path[0]
-        filename = path[1]
+        folder = os.path.dirname(a_file)
+        filename = os.path.basename(a_file)
         logger.info("Getting file %s", a_file)
-        file = aws_download_file(os.path.join(folder, filename), data_type)
+        file = aws_download_file(a_file, data_type)
+        path = os.path.join(output_dir, folder) if use_path else output_dir
         if file:
-            save_file(file, output_dir, filename, data_type)
+            save_file(file, path, filename, data_type)
 
 
 def parse(filename):
@@ -145,8 +152,7 @@ def parse(filename):
 def get_filename(sample_data, extension):
     metaspace_options = sample_data['metaspace_options']
     s3dir = sample_data['s3dir']
-    filename = metaspace_options['Dataset_Name'] + '.' + extension
-    path = os.path.join(s3dir[extension].strip(filename), filename)
+    path = s3dir[extension]
     return path
 
 
@@ -162,6 +168,8 @@ def save_file(content, path, filename, data_type='text'):
 
 
 def aws_get_annotations(mtspc_obj, output_dir, database=config.DATABASE, fdr=config.FDR):
+
+    filename = 'annotations'
     # CONNECT TO METASPACE SERVICES
     from sm_annotation_utils import sm_annotation_utils
     sm = sm_annotation_utils.SMInstance()  # connect to the main metaspace service
@@ -206,24 +214,39 @@ def aws_get_annotations(mtspc_obj, output_dir, database=config.DATABASE, fdr=con
             rho_chaos = ''
             molecule_names = nms
 
-            print('"institution"	"datasetName"	"formula"	"adduct"	"mz"	"msm"	'
-                  '"fdr"	"rhoSpatial"	"rhoSpectral"	"rhoChaos"	"moleculeNames"')
-            print(institution, dataset_name, formula, adduct, mz, msm,
-                  fdr, rho_spatial, rho_spectral, rho_chaos, molecule_names)
+            annotations = OrderedDict([
+                ('institution', institution),
+                ('datasetName', dataset_name),
+                ('formula', formula),
+                ('adduct', adduct),
+                ('mz', mz),
+                ('msm', msm),
+                ('fdr', fdr),
+                ('rhoSpatial', rho_spatial),
+                ('rhoSpectral', rho_spectral),
+                ('rhoChaos', rho_chaos),
+                ('moleculeNames', molecule_names)])
 
-            items = [institution, dataset_name, formula, adduct, mz, msm,
-                     fdr, rho_spatial, rho_spectral, rho_chaos, molecule_names]
-            print(*items, sep='\t')
+            # JSON file
+            json_obj = json.dumps(annotations)
+            f = open(os.path.join(output_dir, filename + '.json'), "w")
+            f.write(json_obj)
+            f.close()
+
+            # Tab separated file
+            with open(os.path.join(output_dir, filename + '.tsv'), "w") as f:
+                writer = csv.writer(f, delimiter='\t')
+                writer.writerow(annotations.keys())
+                writer.writerow(annotations.values())
+            f.close()
+
             return
 
 
 aws_cred = AwsCredentials()
 
 
-def aws_get_images(mtspc_obj, output_dir):
-
-    session = boto3.Session(aws_cred.get_access_key, aws_cred.get_secret_access_key)
-    s3 = session.resource('s3')
+def aws_get_images(mtspc_obj, output_dir, use_path=False):
     sm = SMInstance()
 
     for sample in mtspc_obj:
@@ -231,15 +254,18 @@ def aws_get_images(mtspc_obj, output_dir):
         ds_name = metaspace_options['Dataset_Name']
         ds = sm.dataset(name=ds_name)
         opt_im = ds._gqclient.getRawOpticalImage(ds.id)['rawOpticalImage']
-        img_url = ds._baseurl + opt_im['url']
-        img_folder = opt_im['url'].split('/')[1]
-        img_name = opt_im['url'].split('/')[2]
 
+        path = opt_im['url']
+        img_url = ds._baseurl + path
+        img_folder = os.path.dirname(path)
+        img_name = os.path.basename(path)
         logger.info("Getting file %s", img_url)
         img_data = requests.get(img_url).content
+
+        out_path = output_dir + img_folder if use_path else output_dir
         if img_data:
             save_file(content=img_data,
-                      path=os.path.join(output_dir, img_folder),
+                      path=out_path,
                       filename=img_name + '.jpg', data_type='binary')
 
 
@@ -253,4 +279,4 @@ def get_aws_session(database):
 
 
 if __name__ == "__main__":
-   main(sys.argv[1:])
+    main(sys.argv[1:])
