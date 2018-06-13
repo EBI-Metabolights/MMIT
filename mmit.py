@@ -126,13 +126,12 @@ def aws_download_files(mtspc_obj, output_dir, extension, data_type='binary'):
 
     for sample in mtspc_obj:
         a_file = get_filename(sample, extension).replace(aws_bucket, '')
-        path = a_file.split('/')
-        folder = path[0]
-        filename = path[1]
+        folder = os.path.dirname(a_file)
+        filename = os.path.basename(a_file)
         logger.info("Getting file %s", a_file)
-        file = aws_download_file(os.path.join(folder, filename), data_type)
+        file = aws_download_file(a_file, data_type)
         if file:
-            save_file(file, output_dir, filename, data_type)
+            save_file(file, os.path.join(output_dir, folder), filename, data_type)
 
 
 def parse(filename):
@@ -145,8 +144,7 @@ def parse(filename):
 def get_filename(sample_data, extension):
     metaspace_options = sample_data['metaspace_options']
     s3dir = sample_data['s3dir']
-    filename = metaspace_options['Dataset_Name'] + '.' + extension
-    path = os.path.join(s3dir[extension].strip(filename), filename)
+    path = s3dir[extension]
     return path
 
 
@@ -231,15 +229,16 @@ def aws_get_images(mtspc_obj, output_dir):
         ds_name = metaspace_options['Dataset_Name']
         ds = sm.dataset(name=ds_name)
         opt_im = ds._gqclient.getRawOpticalImage(ds.id)['rawOpticalImage']
-        img_url = ds._baseurl + opt_im['url']
-        img_folder = opt_im['url'].split('/')[1]
-        img_name = opt_im['url'].split('/')[2]
 
+        path = opt_im['url']
+        img_url = ds._baseurl + path
+        img_folder = os.path.dirname(path)
+        img_name = os.path.basename(path)
         logger.info("Getting file %s", img_url)
         img_data = requests.get(img_url).content
         if img_data:
             save_file(content=img_data,
-                      path=os.path.join(output_dir, img_folder),
+                      path=output_dir + img_folder,
                       filename=img_name + '.jpg', data_type='binary')
 
 
