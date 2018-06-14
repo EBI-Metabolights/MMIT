@@ -20,12 +20,13 @@ logger = logging.getLogger(__name__)
 
 
 def main(argv):
-    short_options = 'hvti:o:pa:tn'
+    short_options = 'hvti:o:patns:'
     long_options = ['help', 'version', 'testmode',
                     'inputfile=', 'outputdir=',
                     'use-path',
                     'imzML', 'ibd', 'annotations', 'images',
-                    'new-study', 'title=', 'description='
+                    'new-study', 'title=', 'description=',
+                    'study-ids='
                     ]
     options_help = """ [options]
     
@@ -33,6 +34,7 @@ General Options:
    -h   --help          Display this message.
    -v   --version       Display version information.
    -t   --testmode      Read the input JSON file provided with option -i and print its content.
+   -s   --study-ids     Get Study JSON information. Input is a (comma separated) list of METASPACE identifiers.
    -i   --inputfile     Provide the JSON input file.
    -o   --outputdir     Set the output folder. Will be created if not found.
    -p   --use-path      Save files keeping same folder structure as in AWS  
@@ -40,6 +42,7 @@ General Options:
         --ibd           Download *.ibd study associated files.
         --annotations   Download JSON study file.
         --images        Download raw optical images.
+   -a   --download-all  Download all study associated files. Same as --imzML --idb --images --annotations
    -n   --new-study     Create ISA-Tab new Study with provided title.
         --title         Study title.
         --description   Study description.
@@ -56,10 +59,11 @@ General Options:
     std_title = ''
     std_description = ''
     use_path = False
+    study_ids = list()
 
     try:
         opts, args = getopt.getopt(argv, shortopts=short_options, longopts=long_options)
-    except getopt.GetoptError:
+    except getopt.GetoptError as err:
         print('Usage: python ' + os.path.basename(sys.argv[0]) + options_help)
         sys.exit(2)
     if len(opts) < 1:
@@ -97,8 +101,20 @@ General Options:
             std_description = arg
         if opt in ('-p', '--use-path'):
             use_path = True
+        if opt in ('-s', '--study-ids'):
+            study_ids = arg.split(',')
 
-    mtspc_obj = parse(input_file)
+    if study_ids:
+        if not std_title or not output_dir:
+            print()
+            print("==> Additional required parameters missing.")
+            print()
+            print('Usage: python ' + os.path.basename(sys.argv[0]) + options_help)
+            exit(10)
+        get_study_json(study_ids, output_dir, std_title)
+
+    if input_file:
+        mtspc_obj = parse(input_file)
 
     if test_mode:
         print_mtspc_obj(mtspc_obj)
@@ -150,7 +166,6 @@ def parse(filename):
 
 
 def get_filename(sample_data, extension):
-    metaspace_options = sample_data['metaspace_options']
     s3dir = sample_data['s3dir']
     path = s3dir[extension]
     return path
@@ -172,7 +187,7 @@ def aws_get_annotations(mtspc_obj, output_dir, database=config.DATABASE, fdr=con
     filename = 'annotations'
     # CONNECT TO METASPACE SERVICES
     from sm_annotation_utils import sm_annotation_utils
-    sm = sm_annotation_utils.SMInstance()  # connect to the main metaspace service
+    sm = SMInstance()  # connect to the main metaspace service
     db = sm._moldb_client.getDatabase(database)  # connect to the molecular database service
 
     for sample in mtspc_obj:
@@ -229,9 +244,7 @@ def aws_get_annotations(mtspc_obj, output_dir, database=config.DATABASE, fdr=con
 
             # JSON file
             json_obj = json.dumps(annotations)
-            f = open(os.path.join(output_dir, filename + '.json'), "w")
-            f.write(json_obj)
-            f.close()
+            save_file(json_obj, output_dir, filename + '.json', data_type='text')
 
             # Tab separated file
             with open(os.path.join(output_dir, filename + '.tsv'), "w") as f:
@@ -272,10 +285,36 @@ def aws_get_images(mtspc_obj, output_dir, use_path=False):
 def get_aws_session(database):
     # CONNECT TO METASPACE SERVICES
     from sm_annotation_utils import sm_annotation_utils
-    sm = sm_annotation_utils.SMInstance()  # connect to the main metaspace service
+    sm = SMInstance()  # connect to the main metaspace service
     db = sm._moldb_client.getDatabase(database)  # connect to the molecular database service
 
     return sm
+
+
+def get_study_json(ds_ids, output_dir, std_title):
+
+    session = boto3.Session(aws_cred.get_access_key, aws_cred.get_secret_access_key)
+    s3 = session.resource('s3')
+    sm = SMInstance()
+    db = sm._moldb_client.getDatabase(config.DATABASE)
+    std_json = []
+    for ii, ds_id in enumerate(ds_ids):
+        logger.info("Getting JSON information for %s", ds_id)
+        ds = sm.dataset(id=ds_id)
+        me = json.loads(ds.metadata.json)
+        path = ds.s3dir[6:]  # strip s3a://
+        bucket_name, ds_name = path.split('/', 1)
+        bucket = s3.Bucket(bucket_name)
+        me['s3dir'] = {}
+        for obj in bucket.objects.filter(Prefix=path.split('/')[1]):
+            if obj.key.endswith('.imzML'):
+                me['s3dir']['imzML'] = path + "/" + obj.key.split('/')[-1]
+            if obj.key.endswith('.ibd'):
+                me['s3dir']['ibd'] = path + "/" + obj.key.split('/')[-1]
+        std_json.append(me)
+
+    save_file(json.dumps(std_json), output_dir, std_title + '.json', data_type='text')
+    return std_json
 
 
 if __name__ == "__main__":

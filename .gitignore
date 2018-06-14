@@ -72,3 +72,5 @@ logs/
 /sampledata/
 /outputdir/
 /aws_credentials.cfg
+/input/
+/output/
