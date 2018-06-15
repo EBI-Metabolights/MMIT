@@ -177,6 +177,7 @@ def save_file(content, path, filename, data_type='text'):
     mode = 'w'
     if data_type == 'binary':
         mode = 'wb'
+    logger.info("Saving file %s %s", path, filename)
     with open(os.path.join(path, filename), mode) as data_file:
         data_file.write(content)
         data_file.close()
@@ -272,14 +273,14 @@ def aws_get_images(mtspc_obj, output_dir, use_path=False):
         img_url = ds._baseurl + path
         img_folder = os.path.dirname(path)
         img_name = os.path.basename(path)
-        logger.info("Getting file %s", img_url)
-        img_data = requests.get(img_url).content
-
-        out_path = output_dir + img_folder if use_path else output_dir
-        if img_data:
-            save_file(content=img_data,
-                      path=out_path,
-                      filename=img_name + '.jpg', data_type='binary')
+        if img_name and not img_name == 'null':
+            logger.info("Getting file %s", img_url)
+            img_data = requests.get(img_url).content
+            if img_data:
+                out_path = output_dir + img_folder if use_path else output_dir
+                save_file(content=img_data,
+                          path=out_path,
+                          filename=img_name + '.jpg', data_type='binary')
 
 
 def get_aws_session(database):
