@@ -1,4 +1,6 @@
 import logging
+import os
+
 import config
 import configparser
 import boto3
@@ -47,10 +49,11 @@ s3 = session.resource('s3')
 bucket = s3.Bucket(aws_cred.get_bucket)
 
 
-def aws_download_file(source, data_type='binary'):
-
-    obj = bucket.Object(source)
-    logger.info("Downloading %s", source)
+def aws_download_file(bucket_name, aws_path, aws_file_name, data_type='binary'):
+    aws_bucket = s3.Bucket(bucket_name)
+    source = os.path.join(aws_path, aws_file_name)
+    obj = aws_bucket.Object(source)
+    logger.info("Downloading %s %s", bucket_name, source)
     body = None
     try:
         if data_type == 'utf-8':
