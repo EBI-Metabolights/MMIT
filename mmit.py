@@ -142,20 +142,13 @@ def print_mtspc_obj(mtspc_obj):
 
 
 def aws_download_files(mtspc_obj, output_dir, extension, data_type='binary', use_path=False):
-    credentials = configparser.ConfigParser()
-    credentials.read(config.AWS_CREDENTIALS)
-    mtspc = credentials['METASPACE']
-    aws_bucket = mtspc['bucket'] + '/'
-
     for sample in mtspc_obj:
-        a_file = get_filename(sample, extension).replace(aws_bucket, '')
-        folder = os.path.dirname(a_file)
-        filename = os.path.basename(a_file)
-        logger.info("Getting file %s", a_file)
-        file = aws_download_file(a_file, data_type)
-        path = os.path.join(output_dir, folder) if use_path else output_dir
+        aws_bucket, aws_path, file_name = get_filename_parts(sample, extension)
+        logger.info("Getting file %s %s %s (%s)", aws_bucket, aws_path, file_name, data_type)
+        file = aws_download_file(aws_bucket, aws_path, file_name, data_type)
+        path = os.path.join(output_dir, aws_path) if use_path else output_dir
         if file:
-            save_file(file, path, filename, data_type)
+            save_file(file, path, file_name, data_type)
 
 
 def parse(filename):
@@ -165,10 +158,13 @@ def parse(filename):
     return json_data
 
 
-def get_filename(sample_data, extension):
+def get_filename_parts(sample_data, key):
     s3dir = sample_data['s3dir']
-    path = s3dir[extension]
-    return path
+    value = s3dir[key]
+    bucket_name = value.split('/')[0]
+    file_name = value.split('/')[-1]
+    aws_path = os.path.dirname(value).replace(bucket_name + '/', '')
+    return bucket_name, aws_path, file_name
 
 
 def save_file(content, path, filename, data_type='text'):
@@ -177,10 +173,9 @@ def save_file(content, path, filename, data_type='text'):
     mode = 'w'
     if data_type == 'binary':
         mode = 'wb'
-    logger.info("Saving file %s %s", path, filename)
+    logger.info("Saving file %s %s (%s)", path, filename, data_type)
     with open(os.path.join(path, filename), mode) as data_file:
         data_file.write(content)
-        data_file.close()
 
 
 def aws_get_annotations(mtspc_obj, output_dir, database=config.DATABASE, fdr=config.FDR):
