@@ -60,6 +60,7 @@ General Options:
     std_description = ''
     use_path = False
     study_ids = list()
+    download_all = False
 
     try:
         opts, args = getopt.getopt(argv, shortopts=short_options, longopts=long_options)
@@ -103,12 +104,18 @@ General Options:
             use_path = True
         if opt in ('-s', '--study-ids'):
             study_ids = arg.split(',')
+        if opt in ('-a', '--download-all'):
+            download_all = True
+
+    if download_all:
+        if not study_ids or not output_dir:
+            print('Usage: python ' + os.path.basename(sys.argv[0]) + options_help)
+            exit(11)
+        get_all_files(study_ids, ['.imzML', '.ibd', '.jpg', '.jpeg', '.png'], output_dir, use_path=use_path)
+        exit(0)
 
     if study_ids:
         if not std_title or not output_dir:
-            print()
-            print("==> Additional required parameters missing.")
-            print()
             print('Usage: python ' + os.path.basename(sys.argv[0]) + options_help)
             exit(10)
         get_study_json(study_ids, output_dir, std_title)
@@ -311,6 +318,28 @@ def get_study_json(ds_ids, output_dir, std_title):
 
     save_file(json.dumps(std_json), output_dir, std_title + '.json', data_type='text')
     return std_json
+
+
+def get_all_files(ds_ids, file_types, output_dir, use_path=False):
+
+    session = boto3.Session(aws_cred.get_access_key, aws_cred.get_secret_access_key)
+    s3 = session.resource('s3')
+    sm = SMInstance()
+    for ii, ds_id in enumerate(ds_ids):
+        logger.info("Getting all files for %s", ds_id)
+        ds = sm.dataset(id=ds_id)
+        aws_path = ds.s3dir[6:]  # strip s3a://
+        bucket_name, ds_name = aws_path.split('/', 1)
+        aws_bucket = s3.Bucket(bucket_name)
+        pref_filter = ds_name
+        for obj in aws_bucket.objects.filter(Prefix=pref_filter):
+            for suffix in file_types:
+                if obj.key.endswith(suffix):
+                    file_name = obj.key.split('/')[-1]
+                    file = aws_download_file(bucket_name, ds_name, file_name)
+                    if file:
+                        out_path = os.path.join(output_dir, aws_path) if use_path else output_dir
+                        save_file(file, out_path, file_name, data_type='binary')
 
 
 if __name__ == "__main__":
