@@ -36,20 +36,20 @@ General Options:
    -t   --testmode      Read the input JSON file provided with option -i and print its content.
    -s   --study-ids     Get Study JSON information. Input is a (comma separated) list of METASPACE identifiers.
    -i   --inputfile     Provide the JSON input file.
-   -o   --outputdir     Set the output folder. Will be created if not found.
+   -o   --outputdir     Set the output folder. Will be created if not found. 'output' will be used as default.
    -p   --use-path      Save files keeping same folder structure as in AWS  
         --imzML         Download *.imzml study associated files.
         --ibd           Download *.ibd study associated files.
         --annotations   Download JSON study file.
         --images        Download raw optical images.
-   -a   --download-all  Download all study associated files. Same as --imzML --idb --images --annotations
+   -a   --download-all  Download all associated files for a set of METASPACE Id's. Same as --imzML --idb --images --annotations.
    -n   --new-study     Create ISA-Tab new Study with provided title.
         --title         Study title.
         --description   Study description.
 """
 
     input_file = ''
-    output_dir = ''
+    output_dir = 'output'
     test_mode = False
     download_imzml = False
     download_ibd = False
@@ -107,38 +107,83 @@ General Options:
         if opt in ('-a', '--download-all'):
             download_all = True
 
+    if input_file:
+        mtspc_obj = parse(input_file)
+
     if download_all:
-        if not study_ids or not output_dir:
-            print('Usage: python ' + os.path.basename(sys.argv[0]) + options_help)
-            exit(11)
+        missing = list()
+        if not study_ids:
+            missing.append("-s --study-ids")
+            print_need_additional_params(missing, options_help, exit_code=10)
         get_all_files(study_ids, ['.imzML', '.ibd', '.jpg', '.jpeg', '.png'], output_dir, use_path=use_path)
         exit(0)
 
     if study_ids:
-        if not std_title or not output_dir:
-            print('Usage: python ' + os.path.basename(sys.argv[0]) + options_help)
-            exit(10)
+        missing = list()
+        if not std_title:
+            missing.append("   --title")
+            print_need_additional_params(missing, options_help, exit_code=11)
         get_study_json(study_ids, output_dir, std_title)
 
-    if input_file:
-        mtspc_obj = parse(input_file)
-
     if test_mode:
+        missing = list()
+        if not input_file:
+            missing.append("-i --inputfile")
+            print_need_additional_params(missing, options_help, exit_code=12)
         print_mtspc_obj(mtspc_obj)
         exit(0)
 
     if download_imzml:
+        missing = list()
+        if not input_file:
+            missing.append("-i --inputfile")
+            print_need_additional_params(missing, options_help, exit_code=13)
         aws_download_files(mtspc_obj, output_dir, 'imzML', data_type='utf-8', use_path=use_path)
+
     if download_ibd:
+        missing = list()
+        if not input_file:
+            missing.append("-i --inputfile")
+            print_need_additional_params(missing, options_help, exit_code=14)
         aws_download_files(mtspc_obj, output_dir, 'ibd', data_type='binary', use_path=use_path)
+
     if download_annotations:
+        missing = list()
+        if not input_file:
+            missing.append("-i --inputfile")
+            print_need_additional_params(missing, options_help, exit_code=15)
         aws_get_annotations(mtspc_obj, output_dir)
+
     if download_images:
+        missing = list()
+        if not input_file:
+            missing.append("-i --inputfile")
+            print_need_additional_params(missing, options_help, exit_code=16)
         aws_get_images(mtspc_obj, output_dir, use_path=use_path)
+
     if create_new_study:
+        missing = list()
+        if not input_file:
+            missing.append("-i --inputfile")
+        if not std_title:
+            missing.append("   --title")
+        if not std_description:
+            missing.append("   --description")
+        if missing:
+            print_need_additional_params(missing, options_help, exit_code=17)
         iac = IsaApiClient()
         inv = iac.new_study(std_title, std_description, mtspc_obj, output_dir, persist=True)
         print(inv)
+
+
+def print_need_additional_params(missing, options_help, exit_code=1):
+    print()
+    print('=> Missing required parameters:')
+    for param in missing:
+        print('\t', param)
+    print()
+    print('Usage: python ' + os.path.basename(sys.argv[0]) + options_help)
+    exit(exit_code)
 
 
 def print_mtspc_obj(mtspc_obj):
