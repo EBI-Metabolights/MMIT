@@ -2,7 +2,6 @@ import sys
 import boto3
 import requests
 import config
-import configparser
 import logging
 import getopt
 import os
@@ -20,13 +19,14 @@ logger = logging.getLogger(__name__)
 
 
 def main(argv):
-    short_options = 'hvti:o:patns:'
+    short_options = 'hvti:o:patns:l'
     long_options = ['help', 'version', 'testmode',
                     'inputfile=', 'outputdir=',
                     'use-path',
                     'imzML', 'ibd', 'annotations', 'images',
                     'new-study', 'title=', 'description=',
-                    'study-ids='
+                    'study-ids=',
+                    'list-files'
                     ]
     options_help = """ [options]
     
@@ -36,20 +36,21 @@ General Options:
    -t   --testmode      Read the input JSON file provided with option -i and print its content.
    -s   --study-ids     Get Study JSON information. Input is a (comma separated) list of METASPACE identifiers.
    -i   --inputfile     Provide the JSON input file.
-   -o   --outputdir     Set the output folder. Will be created if not found.
+   -o   --outputdir     Set the output folder. Will be created if not found. 'output' will be used as default.
    -p   --use-path      Save files keeping same folder structure as in AWS  
         --imzML         Download *.imzml study associated files.
         --ibd           Download *.ibd study associated files.
         --annotations   Download JSON study file.
         --images        Download raw optical images.
-   -a   --download-all  Download all study associated files. Same as --imzML --idb --images --annotations
+   -a   --download-all  Download all associated files for a set of METASPACE Id's. Same as --imzML --idb --images --annotations.
    -n   --new-study     Create ISA-Tab new Study with provided title.
         --title         Study title.
         --description   Study description.
+   -l   --list-files    List all files in AWS for a list of METASPACE identifiers.
 """
 
     input_file = ''
-    output_dir = ''
+    output_dir = 'output'
     test_mode = False
     download_imzml = False
     download_ibd = False
@@ -60,6 +61,8 @@ General Options:
     std_description = ''
     use_path = False
     study_ids = list()
+    download_all = False
+    list_files = False
 
     try:
         opts, args = getopt.getopt(argv, shortopts=short_options, longopts=long_options)
@@ -103,35 +106,97 @@ General Options:
             use_path = True
         if opt in ('-s', '--study-ids'):
             study_ids = arg.split(',')
-
-    if study_ids:
-        if not std_title or not output_dir:
-            print()
-            print("==> Additional required parameters missing.")
-            print()
-            print('Usage: python ' + os.path.basename(sys.argv[0]) + options_help)
-            exit(10)
-        get_study_json(study_ids, output_dir, std_title)
+        if opt in ('-a', '--download-all'):
+            download_all = True
+        if opt in ('-l', '--list-files'):
+            list_files = True
 
     if input_file:
         mtspc_obj = parse(input_file)
 
+    if list_files:
+        missing = list()
+        if not study_ids:
+            missing.append("-s --study-ids")
+            print_need_additional_params(missing, options_help, exit_code=10)
+        list_all_files(study_ids, ['.imzML', '.ibd', '.jpg', '.jpeg', '.png'])
+        exit(0)
+
+    if download_all:
+        missing = list()
+        if not study_ids:
+            missing.append("-s --study-ids")
+            print_need_additional_params(missing, options_help, exit_code=10)
+        get_all_files(study_ids, ['.imzML', '.ibd', '.jpg', '.jpeg', '.png'], output_dir, use_path=use_path)
+        exit(0)
+
+    if study_ids:
+        missing = list()
+        if not std_title:
+            missing.append("   --title")
+            print_need_additional_params(missing, options_help, exit_code=11)
+        get_study_json(study_ids, output_dir, std_title)
+
     if test_mode:
+        missing = list()
+        if not input_file:
+            missing.append("-i --inputfile")
+            print_need_additional_params(missing, options_help, exit_code=12)
         print_mtspc_obj(mtspc_obj)
         exit(0)
 
     if download_imzml:
+        missing = list()
+        if not input_file:
+            missing.append("-i --inputfile")
+            print_need_additional_params(missing, options_help, exit_code=13)
         aws_download_files(mtspc_obj, output_dir, 'imzML', data_type='utf-8', use_path=use_path)
+
     if download_ibd:
+        missing = list()
+        if not input_file:
+            missing.append("-i --inputfile")
+            print_need_additional_params(missing, options_help, exit_code=14)
         aws_download_files(mtspc_obj, output_dir, 'ibd', data_type='binary', use_path=use_path)
+
     if download_annotations:
+        missing = list()
+        if not input_file:
+            missing.append("-i --inputfile")
+            print_need_additional_params(missing, options_help, exit_code=15)
         aws_get_annotations(mtspc_obj, output_dir)
+
     if download_images:
+        missing = list()
+        if not input_file:
+            missing.append("-i --inputfile")
+            print_need_additional_params(missing, options_help, exit_code=16)
         aws_get_images(mtspc_obj, output_dir, use_path=use_path)
+
     if create_new_study:
+        missing = list()
+        if not input_file:
+            missing.append("-i --inputfile")
+        if not std_title:
+            missing.append("   --title")
+        if not std_description:
+            missing.append("   --description")
+        if missing:
+            print_need_additional_params(missing, options_help, exit_code=17)
         iac = IsaApiClient()
         inv = iac.new_study(std_title, std_description, mtspc_obj, output_dir, persist=True)
         print(inv)
+        exit(0)
+
+
+def print_need_additional_params(missing, options_help, exit_code=1):
+    print()
+    print('=> Missing required parameters:')
+    for param in missing:
+        print('\t', param)
+    print()
+    print('Usage: python ' + os.path.basename(sys.argv[0]) + options_help)
+    exit(exit_code)
 
 
 def print_mtspc_obj(mtspc_obj):
@@ -311,6 +376,46 @@ def get_study_json(ds_ids, output_dir, std_title):
 
     save_file(json.dumps(std_json), output_dir, std_title + '.json', data_type='text')
     return std_json
+
+
+def get_all_files(ds_ids, file_types, output_dir, use_path=False):
+
+    session = boto3.Session(aws_cred.get_access_key, aws_cred.get_secret_access_key)
+    s3 = session.resource('s3')
+    sm = SMInstance()
+    for ii, ds_id in enumerate(ds_ids):
+        logger.info("Getting all files for %s", ds_id)
+        ds = sm.dataset(id=ds_id)
+        aws_path = ds.s3dir[6:]  # strip s3a://
+        bucket_name, ds_name = aws_path.split('/', 1)
+        aws_bucket = s3.Bucket(bucket_name)
+        pref_filter = ds_name
+        for obj in aws_bucket.objects.filter(Prefix=pref_filter):
+            for suffix in file_types:
+                if obj.key.endswith(suffix):
+                    file_name = obj.key.split('/')[-1]
+                    file = aws_download_file(bucket_name, ds_name, file_name)
+                    if file:
+                        out_path = os.path.join(output_dir, aws_path) if use_path else output_dir
+                        save_file(file, out_path, file_name, data_type='binary')
+
+
+def list_all_files(ds_ids, file_types):
+
+    session = boto3.Session(aws_cred.get_access_key, aws_cred.get_secret_access_key)
+    s3 = session.resource('s3')
+    sm = SMInstance()
+    for ii, ds_id in enumerate(ds_ids):
+        logger.info("Getting all files for %s", ds_id)
+        ds = sm.dataset(id=ds_id)
+        aws_path = ds.s3dir[6:]  # strip s3a://
+        bucket_name, ds_name = aws_path.split('/', 1)
+        aws_bucket = s3.Bucket(bucket_name)
+        pref_filter = ds_name
+        for obj in aws_bucket.objects.filter(Prefix=pref_filter):
+            for suffix in file_types:
+                if obj.key.endswith(suffix):
+                    print(bucket_name, obj.key)
 
 
 if __name__ == "__main__":
