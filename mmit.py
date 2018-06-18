@@ -2,7 +2,6 @@ import sys
 import boto3
 import requests
 import config
-import configparser
 import logging
 import getopt
 import os
@@ -20,13 +19,14 @@ logger = logging.getLogger(__name__)
 
 
 def main(argv):
-    short_options = 'hvti:o:patns:'
+    short_options = 'hvti:o:patns:l'
     long_options = ['help', 'version', 'testmode',
                     'inputfile=', 'outputdir=',
                     'use-path',
                     'imzML', 'ibd', 'annotations', 'images',
                     'new-study', 'title=', 'description=',
-                    'study-ids='
+                    'study-ids=',
+                    'list-files'
                     ]
     options_help = """ [options]
     
@@ -46,6 +46,7 @@ General Options:
    -n   --new-study     Create ISA-Tab new Study with provided title.
         --title         Study title.
         --description   Study description.
+   -l   --list-files    List all files in AWS for a list of METASPACE identifiers.
 """
 
     input_file = ''
@@ -61,6 +62,7 @@ General Options:
     use_path = False
     study_ids = list()
     download_all = False
+    list_files = False
 
     try:
         opts, args = getopt.getopt(argv, shortopts=short_options, longopts=long_options)
@@ -106,9 +108,19 @@ General Options:
             study_ids = arg.split(',')
         if opt in ('-a', '--download-all'):
             download_all = True
+        if opt in ('-l', '--list-files'):
+            list_files = True
 
     if input_file:
         mtspc_obj = parse(input_file)
+
+    if list_files:
+        missing = list()
+        if not study_ids:
+            missing.append("-s --study-ids")
+            print_need_additional_params(missing, options_help, exit_code=10)
+        list_all_files(study_ids, ['.imzML', '.ibd', '.jpg', '.jpeg', '.png'])
+        exit(0)
 
     if download_all:
         missing = list()
@@ -174,6 +186,7 @@ General Options:
         iac = IsaApiClient()
         inv = iac.new_study(std_title, std_description, mtspc_obj, output_dir, persist=True)
         print(inv)
+        exit(0)
 
 
 def print_need_additional_params(missing, options_help, exit_code=1):
@@ -385,6 +398,24 @@ def get_all_files(ds_ids, file_types, output_dir, use_path=False):
                     if file:
                         out_path = os.path.join(output_dir, aws_path) if use_path else output_dir
                         save_file(file, out_path, file_name, data_type='binary')
+
+
+def list_all_files(ds_ids, file_types):
+
+    session = boto3.Session(aws_cred.get_access_key, aws_cred.get_secret_access_key)
+    s3 = session.resource('s3')
+    sm = SMInstance()
+    for ii, ds_id in enumerate(ds_ids):
+        logger.info("Getting all files for %s", ds_id)
+        ds = sm.dataset(id=ds_id)
+        aws_path = ds.s3dir[6:]  # strip s3a://
+        bucket_name, ds_name = aws_path.split('/', 1)
+        aws_bucket = s3.Bucket(bucket_name)
+        pref_filter = ds_name
+        for obj in aws_bucket.objects.filter(Prefix=pref_filter):
+            for suffix in file_types:
+                if obj.key.endswith(suffix):
+                    print(bucket_name, obj.key)
 
 
 if __name__ == "__main__":
